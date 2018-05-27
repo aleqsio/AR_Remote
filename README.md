@@ -6,11 +6,6 @@ Własnoręczny interfejs wyświetlany na przekazie na żywo z kamerki internetow
 
 Projekt działa w następujący sposób:
 1.	Kalibracja kamerki. Wykorzystałem do tego celu zmodyfikowany skrypt z forum opencv, który przez kilka minut zbiera zdjęcia specjalnej szachownicy markerów aruco, żeby zebrać informacje o odkształceniu obrazu widzianego przez moją kamerkę internetową. Te dane posłużą do lepszej estmacji położenia 3d. Przy zmianie urządzenia można albo ponownie wykonać kalibrację, albo użyć domyślnych parametrów.
-
- 
-Rysunek 1 Płytka kalibracyjna
-
-
 2.	Wczytanie akcji z pliku .yaml i utworzenie obiektów interfejsu.
 3.	Dla każdej klatki z obrazu kamery:
 a.	Wykrycie markerów na obrazie za pomocą funkcji z biblioteki cv2.aruco (pod spodem wykonywany jest threshold, canny edge detection i przypasowywanie potencjalnych markerów do słownika markerów danej kategorii (tu 4X41000))
