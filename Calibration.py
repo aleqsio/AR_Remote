@@ -1,8 +1,6 @@
 # Calibration script
 # http://answers.opencv.org/question/98447/camera-calibration-using-charuco-and-python/
-import time
 import cv2
-import numpy as np
 import pickle
 
 dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_1000)

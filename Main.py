@@ -21,25 +21,29 @@ class Menu(object):
         self.chosen = None
         self.chosen_option = None
 
+    # returns the holo-interface frame to be overlayed
     def get_image(self):
         line_size = 10
         self.image = np.zeros([self.grid_size * self.resolution, self.grid_size * self.resolution, 3], dtype="uint8")
+        # grid
         for i in range(0, self.grid_size + 1):
             cv2.line(self.image, (i * self.resolution, 0), (i * self.resolution, self.image.shape[0]), (255, 0, 0),
                      line_size)
         for i in range(0, self.grid_size + 1):
             cv2.line(self.image, (0, i * self.resolution), (self.image.shape[1], i * self.resolution), (255, 0, 0),
                      line_size)
+        # highlight
         cv2.rectangle(self.image, (
             self.selected % self.grid_size * self.resolution, self.selected // self.grid_size * self.resolution), (
                           (self.selected % self.grid_size + 1) * self.resolution,
                           (self.selected // self.grid_size + 1) * self.resolution), (255, 0, 0), thickness=-1)
-
+        # selection progress bar
         cv2.rectangle(self.image, (
             self.selected % self.grid_size * self.resolution, self.selected // self.grid_size * self.resolution), (
                           (self.selected % self.grid_size) * self.resolution + int(self.resolution * self.filled),
                           (self.selected // self.grid_size + 1) * self.resolution),
                       (0, 255, 0) if self.chosen == self.selected else (255, 255, 0), thickness=-1)
+        # titles
         for ind, (option_id, option_text) in enumerate(self.options):
             for n, line in enumerate(reversed(option_text.split(" "))):
                 cv2.putText(self.image, line,
@@ -67,6 +71,7 @@ class Menu(object):
         self.filled = 0
 
 
+# stores a collection of menus, handles swapping them on selection
 class UI(object):
     def __init__(self, ui_frame, ui_event_handler):
         self.pending_moves = []
@@ -94,6 +99,7 @@ class UI(object):
                     self.menu.selected += self.menu.grid_size
             self.show_image(marker_points)
 
+    # When the menu image is ready, we align it to the 3d marker and add it to the ui_overlay
     def show_image(self, marker_points):
         self.menu.get_image()
         (remote_width, remote_height, _) = self.menu.image.shape
@@ -111,9 +117,9 @@ class UI(object):
         self.act_on_menu_choice()
 
     def act_on_menu_choice(self):
-        # print(self.menu.chosen_option)
         if self.menu.chosen_option is None:
             return
+        # whether to send action or go to submenu
         if self.menu.chosen_option[0] == "switchtomenu":
             self.menu = self.inflated_menus[self.menu.chosen_option[1]]
             self.menu.reset()
@@ -121,8 +127,8 @@ class UI(object):
             self.event_handler.act_on_event(self.menu.chosen_option[1])
         self.menu.chosen_option = None
 
+    # prepare menu objects for all submenus, no dynamic loading implemented
     def inflate_menu_structure(self, menu_dict):
-        # print(menu_dict)
         main_options = []
         for room in menu_dict:
             k, v = list(room.items())[0]
@@ -140,6 +146,7 @@ class UI(object):
         self.menu = self.inflated_menus["main"]
 
 
+# Main class, handles marker detection, showing ui, and sending events to handler
 class FrameManager(object):
     def __init__(self, fm_frame, fm_event_handler):
         self.markers = {}
@@ -149,11 +156,13 @@ class FrameManager(object):
         self.event_handler = fm_event_handler
         self.ui.inflate_menu_structure(fm_event_handler.event_structure)
         self.calibration = lambda: None
+        # read picked calibration data created using Calibration.py
         with open("calibration_data", "rb") as calibration_data:
             self.calibration.retval, self.calibration.cameraMatrix, self.calibration.distCoeffs, self.calibration.rvecs, self.calibration.tvecs = pickle.load(
                 calibration_data)
         self.ui.inflate_menu_structure(fm_event_handler.event_structure)
 
+    # util function to save marker to a jpg file
     def save_marker_from_id(self, marker_id, filename):
         img = cv2.aruco.drawMarker(self.dictionary, marker_id, 1000)
         cv2.imwrite(filename, img)
@@ -165,6 +174,7 @@ class FrameManager(object):
         self.ui.get_ui_image()
         self.frame = current_frame
 
+    # check whether some markers expired, update all markers 3d transformation, get ui nav move and pass it to the ui
     def update_markers(self, points, ids):
         if ids is None:
             ids = []
@@ -181,10 +191,13 @@ class FrameManager(object):
         if len(self.markers) is 0:
             self.ui.menu.reset()
 
+    # Adds the camera recorded frame to the UI image. Could use different blend modes,
+    # but simple adding looks like a holo image
     def get_current_display_frame(self):
         return cv2.add(self.frame, self.ui.ui_overlay)
 
 
+# Stores data about a single marker entity, differentiated by its id
 class Marker(object):
     def __init__(self, id, curr_frame_manager):
         self.transform = None
@@ -196,6 +209,7 @@ class Marker(object):
         self.last_seen = datetime.datetime.now()
         self.frame_manager = curr_frame_manager
 
+    # get 3d from a set of 4 points using the camera calibration data
     def set_transform_from_rectangle(self, marker_points):
         # https://github.com/jerryhouuu/Face-Yaw-Roll-Pitch-from-Pose-Estimation-using-OpenCV/blob/master/pose_estimation.py
         rot, trans, _ = cv2.aruco.estimatePoseSingleMarkers([marker_points], 0.06,
@@ -211,19 +225,19 @@ class Marker(object):
         roll = -math.degrees(math.asin(math.sin(roll)))
         yaw = math.degrees(math.asin(math.sin(yaw)))
         self.transform = [pitch, roll, yaw]
-        # print(self.transform)
         self.last_seen = datetime.datetime.now()
         self.rect = marker_points
 
     def check_moved(self):
+        # the bigger angle the faster we move trough the interface
         move, angle = self.get_direction()
         if (datetime.datetime.now() - self.cool_down) > + datetime.timedelta(
                 milliseconds=max(2000.0 * math.pow(1.2, (-(angle - 5) * 0.4)), 2)):
             if move is not None:
-                # print(move)
                 self.cool_down = datetime.datetime.now()
                 return move
 
+    # euler angle rotation to one of 4 directions
     def get_direction(self):
         point_dir = [self.transform[0], self.transform[2]]
         max_angle = np.max(np.abs(point_dir))
@@ -242,11 +256,13 @@ class Marker(object):
         return None, 0
 
 
+# reads events from .yaml file, calls them trough the socket on ui call
 class EventHandler(object):
     def __init__(self):
         self.event_structure = None
         self.socket = None
 
+    # parse yaml to dict
     def get_events_from_yaml(self, eh_events):
         for new, org in zip(['a', 'c', 'e', 'l', 'n', 'o', 's', 'z', 'z'],
                             ['ą', 'ć', 'ę', 'ł', 'ń', 'ó', 'ś', 'ż', 'ź']):
@@ -256,6 +272,7 @@ class EventHandler(object):
         self.event_structure = event_dict
         pass
 
+    # send action to device
     def act_on_event(self, chosen_option):
         print(chosen_option)
         self.socket = socket(AF_INET, SOCK_DGRAM)
@@ -265,16 +282,20 @@ class EventHandler(object):
 
 
 if __name__ == "__main__":
+    # open camera feed
     capture = cv2.VideoCapture(0)
     frame_manager = None
     event_handler = EventHandler()
+    # read config
     with open("events.yaml", "r", encoding="utf8") as events:
         event_handler.get_events_from_yaml(events.read())
-    while True:
+    while True: # for every frame
         ret, frame = capture.read()
         if frame_manager is None:
             frame_manager = FrameManager(frame, event_handler)
         frame_manager.update_from_frame(np.flip(frame, 1))
+        # we flip it for allowing better coordination of movement, by def cameras are made to make us look good,
+        # they flip the image, so it looks like what we see in a normal mirror, but this is bad for controlling the ui
         cv2.imshow('frame', frame_manager.get_current_display_frame())
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
